@@ -1,10 +1,3 @@
-"""
-Full Afaan Oromo Stemmer
-Author: (you)
-Type: Rule-based, POS-aware, recursive stemmer
-Purpose: Linguistic normalization (NOT lightweight IR stemming)
-"""
-
 import re
 from nltk.tokenize import word_tokenize
 
@@ -166,7 +159,7 @@ def afaan_oromo_full_stem(text: str):
 
 
 # =====================================================
-# CLI TEST
+# Testing and demonstration
 # =====================================================
 
 if __name__ == "__main__":
