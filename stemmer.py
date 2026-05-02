@@ -1,79 +1,179 @@
+"""
+Full Afaan Oromo Stemmer
+Author: (you)
+Type: Rule-based, POS-aware, recursive stemmer
+Purpose: Linguistic normalization (NOT lightweight IR stemming)
+"""
+
 import re
 from nltk.tokenize import word_tokenize
 
-# =========================
-# Configuration
-# =========================
+# =====================================================
+# PHONOLOGICAL & VALIDATION CONSTANTS
+# =====================================================
 
 VOWELS = set("aeiou")
 MIN_STEM_LENGTH = 3
+MAX_RECURSION = 4   # safety bound against over-stripping
 
-# Ordered longest → shortest
-SUFFIX_RULES = [
-    "ootii", "oota", "oti",
-    "uu", "e", "a",
-    "aa", "ii",
+# =====================================================
+# MORPHOLOGICAL SUFFIX GROUPS
+# =====================================================
+
+# Plural markers
+PLURAL_SUFFIXES = [
+    "ootii", "oota", "oti", "wwan"
 ]
 
-# =========================
-# Validation rules
-# =========================
+# Case markers
+CASE_SUFFIXES = [
+    "tti", "f", "irraa", "dhaaf"
+]
+
+# Possessive markers
+POSSESSIVE_SUFFIXES = [
+    "koo", "kee", "isaa", "ishee", "keenya", "isaanii"
+]
+
+# Verb inflectional endings
+VERB_SUFFIXES = [
+    "achuun", "achuun",  # gerundive variants
+    "achuun", "achuu",
+    "anii", "atte", "ata", "an",
+    "te", "ne", "ta", "ti",
+    "uu", "e", "a"
+]
+
+# Derivational morphology
+DERIVATIONAL_SUFFIXES = [
+    "ummaa", "eenya", "annoo", "suu", "sa", "nya"
+]
+
+# =====================================================
+# VALIDATION FUNCTIONS
+# =====================================================
 
 def is_valid_stem(stem: str) -> bool:
     """
-    Conservative validation to avoid over-stemming.
+    Strong stem validation to prevent errors.
     """
     if len(stem) < MIN_STEM_LENGTH:
         return False
 
-    # Afaan Oromo stems should contain at least one vowel
-    if not any(vowel in stem for vowel in VOWELS):
+    if not any(v in stem for v in VOWELS):
+        return False
+
+    if re.search(r"[^a-z']", stem):
         return False
 
     return True
 
 
-# =========================
-# Core stemming function
-# =========================
+# =====================================================
+# POS HEURISTICS
+# =====================================================
 
-def stem_word(word: str) -> str:
+def guess_pos(word: str) -> str:
     """
-    Applies ONE suffix removal according to ordered rules.
+    Lightweight POS heuristics.
+    Full stemmers REQUIRE POS separation.
     """
-    for suffix in SUFFIX_RULES:
-        if word.endswith(suffix):
-            candidate = word[:-len(suffix)]
-            if is_valid_stem(candidate):
-                return candidate
-    return word
+    if any(word.endswith(s) for s in VERB_SUFFIXES):
+        return "VERB"
+
+    if any(word.endswith(s) for s in PLURAL_SUFFIXES + CASE_SUFFIXES):
+        return "NOUN"
+
+    return "UNKNOWN"
 
 
-# =========================
-# Full stemming pipeline
-# =========================
+# =====================================================
+# RECURSIVE STRIPPING ENGINE
+# =====================================================
 
-def afaan_oromo_stem(text: str):
+def recursive_strip(word: str, suffixes: list) -> str:
     """
-    Tokenizes and stems Afaan Oromo text for Information Retrieval.
+    Controlled recursive stripping with rollback protection.
     """
-    # Note: Ensure you have run nltk.download('punkt')
+    stem = word
+    steps = 0
+
+    while steps < MAX_RECURSION:
+        stripped = False
+        for suf in suffixes:
+            if stem.endswith(suf):
+                candidate = stem[:-len(suf)]
+                if is_valid_stem(candidate):
+                    stem = candidate
+                    stripped = True
+                    break
+        if not stripped:
+            break
+        steps += 1
+
+    return stem
+
+
+# =====================================================
+# FULL STEMMER CORE
+# =====================================================
+
+def full_stem_word(word: str) -> str:
+    """
+    Full morphological normalization for Afaan Oromo.
+    """
+    original = word
+    pos = guess_pos(word)
+
+    stem = word
+
+    if pos == "NOUN":
+        stem = recursive_strip(stem, CASE_SUFFIXES)
+        stem = recursive_strip(stem, POSSESSIVE_SUFFIXES)
+        stem = recursive_strip(stem, PLURAL_SUFFIXES)
+        stem = recursive_strip(stem, DERIVATIONAL_SUFFIXES)
+
+    elif pos == "VERB":
+        stem = recursive_strip(stem, VERB_SUFFIXES)
+        stem = recursive_strip(stem, DERIVATIONAL_SUFFIXES)
+
+    else:
+        stem = recursive_strip(stem, DERIVATIONAL_SUFFIXES)
+
+    # rollback safety
+    if is_valid_stem(stem):
+        return stem
+
+    return original
+
+
+# =====================================================
+# PIPELINE FUNCTION
+# =====================================================
+
+def afaan_oromo_full_stem(text: str):
+    """
+    Full stemming pipeline.
+    """
     tokens = word_tokenize(text.lower())
     stems = []
 
     for token in tokens:
-        # keep only words (no numbers or punctuation)
         if re.fullmatch(r"[a-z']+", token):
-            stems.append(stem_word(token))
-    
+            stems.append(full_stem_word(token))
+
     return stems
 
+
+# =====================================================
+# CLI TEST
+# =====================================================
 
 if __name__ == "__main__":
     with open("input.txt", "r", encoding="utf-8") as f:
         text = f.read()
 
-    stems = afaan_oromo_stem(text)
+    stems = afaan_oromo_full_stem(text)
 
     print("Stemmed output:")
     print(stems)
